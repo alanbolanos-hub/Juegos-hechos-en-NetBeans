@@ -4,10 +4,25 @@ import javax.swing.*;
 import javax.sound.midi.*;
 import java.awt.*;
 import java.awt.event.*;
+import java.awt.geom.AffineTransform;
 import java.util.ArrayList;
 import java.util.Iterator;
 
 public class TDX extends JPanel implements ActionListener, MouseListener {
+
+    // =====================================================================
+    // GAME STATE
+    // =====================================================================
+    enum GameState {
+        MENU, SETTINGS, PLAYING
+    }
+    GameState gameState = GameState.MENU;
+
+    // Settings
+    enum Difficulty {
+        EASY, NORMAL, HARD
+    }
+    Difficulty difficulty = Difficulty.NORMAL;
 
     Timer timer;
 
@@ -24,7 +39,25 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
 
     String selectedTower = "NORMAL";
 
-    // === AUDIO (MIDI sintetizador integrado) ===
+    // UI hover/click tracking
+    int mouseX = 0, mouseY = 0;
+    int menuHover = -1;     // 0=PLAY, 1=SETTINGS
+    int diffHover = -1;     // 0=EASY, 1=NORMAL, 2=HARD
+
+    // =====================================================================
+    // ZONE CONSTANTS
+    // =====================================================================
+    // Path: y=[100,280]. UI bottom: y=490
+    // Valid tower placement: y < 100 OR y > 280, and y < 490
+    static final int PATH_TOP = 100;
+    static final int PATH_BOT = 280;
+    static final int UI_BOTTOM = 490;
+    static final int BASE_X = 840;   // base structure starts here
+    static final int TOWER_SIZE = 36;    // collision radius for overlap check
+
+    // =====================================================================
+    // AUDIO (MIDI)
+    // =====================================================================
     static Synthesizer synth;
     static MidiChannel[] channels;
 
@@ -33,16 +66,14 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
             synth = MidiSystem.getSynthesizer();
             synth.open();
             channels = synth.getChannels();
-            // Canal 0: melodía principal, canal 1: efectos, canal 9: batería/percusión
-            channels[0].programChange(80);  // Lead 1 (square wave)
-            channels[1].programChange(98);  // FX Crystal
-            channels[2].programChange(47);  // Timpani/Impact
+            channels[0].programChange(80);
+            channels[1].programChange(98);
+            channels[2].programChange(47);
         } catch (Exception ex) {
             System.out.println("MIDI no disponible: " + ex.getMessage());
         }
     }
 
-    // Reproducir una nota en un canal dado
     static void playNote(int channel, int note, int velocity, int durationMs) {
         if (channels == null || channel >= channels.length) {
             return;
@@ -57,7 +88,6 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
         }).start();
     }
 
-    // Melodía de fondo (se toca en bucle)
     static boolean bgPlaying = false;
     static Thread bgThread;
 
@@ -67,13 +97,9 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
         }
         bgPlaying = true;
         bgThread = new Thread(() -> {
-            // Melodía principal loop — escala pentatónica estilo 8-bit
-            int[] melody = {60, 62, 64, 67, 69, 67, 64, 62,
-                60, 64, 67, 72, 71, 69, 67, 64,
-                60, 62, 64, 67, 64, 60, 62, 64};
+            int[] melody = {60, 62, 64, 67, 69, 67, 64, 62, 60, 64, 67, 72, 71, 69, 67, 64, 60, 62, 64, 67, 64, 60, 62, 64};
             int[] bass = {36, 36, 43, 43, 41, 41, 38, 38};
-            int noteDur = 180;
-            int bassDur = 360;
+            int noteDur = 180, bassDur = 360;
             while (bgPlaying) {
                 try {
                     for (int i = 0; i < melody.length; i++) {
@@ -102,14 +128,13 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
         }
     }
 
-    // Efecto: muerte de enemigo normal
     static void sfxEnemyDeath() {
         new Thread(() -> {
             try {
                 if (channels == null) {
                     return;
                 }
-                channels[1].programChange(122); // Seashore / noise
+                channels[1].programChange(122);
                 channels[1].noteOn(45, 90);
                 Thread.sleep(60);
                 channels[1].noteOff(45);
@@ -122,7 +147,6 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
         }).start();
     }
 
-    // Efecto: muerte de jefe
     static void sfxBossDeath() {
         new Thread(() -> {
             try {
@@ -130,13 +154,12 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
                     return;
                 }
                 stopBGMusic();
-                channels[1].programChange(100); // FX Atmosphere
+                channels[1].programChange(100);
                 for (int note : new int[]{60, 55, 50, 45, 40, 35}) {
                     channels[1].noteOn(note, 110);
                     Thread.sleep(120);
                     channels[1].noteOff(note);
                 }
-                // Fanfarria de victoria breve
                 for (int note : new int[]{60, 64, 67, 72}) {
                     channels[0].noteOn(note, 90);
                     Thread.sleep(100);
@@ -149,14 +172,13 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
         }).start();
     }
 
-    // Efecto: construcción de torre
     static void sfxTowerPlaced() {
         new Thread(() -> {
             try {
                 if (channels == null) {
                     return;
                 }
-                channels[1].programChange(11); // Vibraphone
+                channels[1].programChange(11);
                 for (int note : new int[]{72, 76, 79}) {
                     channels[1].noteOn(note, 80);
                     Thread.sleep(80);
@@ -168,7 +190,6 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
         }).start();
     }
 
-    // Efecto: nueva oleada
     static void sfxNewWave(int wave) {
         new Thread(() -> {
             try {
@@ -177,7 +198,6 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
                 }
                 stopBGMusic();
                 channels[0].programChange(80);
-                // Alarma ascendente
                 for (int i = 0; i < wave && i < 5; i++) {
                     channels[0].noteOn(60 + i * 4, 100);
                     Thread.sleep(90);
@@ -190,7 +210,6 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
         }).start();
     }
 
-    // Efecto: victoria (última oleada superada)
     static void sfxVictory() {
         new Thread(() -> {
             try {
@@ -198,9 +217,8 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
                     return;
                 }
                 stopBGMusic();
-                channels[0].programChange(14); // Xylophone
-                int[] fanfare = {60, 64, 67, 72, 71, 72, 76};
-                for (int note : fanfare) {
+                channels[0].programChange(14);
+                for (int note : new int[]{60, 64, 67, 72, 71, 72, 76}) {
                     channels[0].noteOn(note, 100);
                     Thread.sleep(130);
                     channels[0].noteOff(note);
@@ -210,7 +228,6 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
         }).start();
     }
 
-    // Efecto: game over
     static void sfxGameOver() {
         new Thread(() -> {
             try {
@@ -218,7 +235,7 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
                     return;
                 }
                 stopBGMusic();
-                channels[0].programChange(70); // Bassoon
+                channels[0].programChange(70);
                 for (int note : new int[]{55, 50, 45, 40}) {
                     channels[0].noteOn(note, 100);
                     Thread.sleep(200);
@@ -229,13 +246,33 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
         }).start();
     }
 
-    // Paleta médica pixel art
+    static void sfxMenuClick() {
+        new Thread(() -> {
+            try {
+                if (channels == null) {
+                    return;
+                }
+                channels[1].programChange(11);
+                channels[1].noteOn(74, 90);
+                Thread.sleep(60);
+                channels[1].noteOff(74);
+                channels[1].noteOn(79, 100);
+                Thread.sleep(80);
+                channels[1].noteOff(79);
+                channels[1].programChange(98);
+            } catch (Exception ignored) {
+            }
+        }).start();
+    }
+
+    // =====================================================================
+    // COLORS & CONSTANTS
+    // =====================================================================
     static final Color COL_BG = new Color(10, 18, 25);
     static final Color COL_PATH = new Color(20, 40, 35);
     static final Color COL_PATH_EDGE = new Color(0, 180, 100);
     static final Color COL_GRID = new Color(0, 60, 45);
     static final Color COL_BASE = new Color(0, 220, 120);
-    static final Color COL_BASE_CROSS = new Color(255, 255, 255);
     static final Color COL_UI_BG = new Color(5, 12, 18);
     static final Color COL_UI_BORDER = new Color(0, 180, 100);
     static final Color COL_UI_TEXT = new Color(180, 255, 200);
@@ -244,14 +281,76 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
     static final Color COL_WAVE = new Color(80, 180, 255);
     static final int PX = 4;
 
+    // =====================================================================
+    // CONSTRUCTOR
+    // =====================================================================
     public TDX() {
         setPreferredSize(new Dimension(900, 600));
         setBackground(COL_BG);
         addMouseListener(this);
-        startWave();
-        startBGMusic();
+        addMouseMotionListener(new MouseMotionAdapter() {
+            @Override
+            public void mouseMoved(MouseEvent e) {
+                mouseX = e.getX();
+                mouseY = e.getY();
+                repaint();
+            }
+        });
         timer = new Timer(30, this);
         timer.start();
+    }
+
+    // =====================================================================
+    // DIFFICULTY HELPERS
+    // =====================================================================
+    double enemyHealthMult() {
+        switch (difficulty) {
+            case EASY:
+                return 0.7;
+            case HARD:
+                return 1.5;
+            default:
+                return 1.0;
+        }
+    }
+
+    double enemySpeedMult() {
+        switch (difficulty) {
+            case EASY:
+                return 0.8;
+            case HARD:
+                return 1.3;
+            default:
+                return 1.0;
+        }
+    }
+
+    int startMoney() {
+        switch (difficulty) {
+            case EASY:
+                return 350;
+            case HARD:
+                return 150;
+            default:
+                return 200;
+        }
+    }
+
+    // =====================================================================
+    // GAME LOGIC
+    // =====================================================================
+    void startGame() {
+        money = startMoney();
+        baseHealth = 100;
+        wave = 1;
+        gameOver = false;
+        gameWon = false;
+        enemies.clear();
+        towers.clear();
+        selectedTower = "NORMAL";
+        gameState = GameState.PLAYING;
+        startWave();
+        startBGMusic();
     }
 
     void startWave() {
@@ -265,7 +364,6 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
             int startX = -40 - col * 60;
             int startY = 112 + row * 30;
 
-            // Tipos de enemigo según oleada
             Enemy e;
             if (wave >= 10 && i % 7 == 0) {
                 e = new TankEnemy(startX, startY);
@@ -275,56 +373,61 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
                 e = new ShieldEnemy(startX, startY);
             } else {
                 e = new Enemy(startX, startY);
-                // Escalar vida con oleada
-                e.maxHealth = 50 + wave * 10;
+                e.maxHealth = (int) ((50 + wave * 10) * enemyHealthMult());
                 e.health = e.maxHealth;
             }
+            // Apply difficulty scaling to all enemies
+            e.speed = (int) Math.max(1, Math.round(e.speed * enemySpeedMult()));
             enemies.add(e);
         }
 
-        // Jefes en oleadas múltiplos de 3
         if (wave % 3 == 0) {
-            if (wave == 15) {
-                enemies.add(new FinalBoss(-200, 140));
-            } else {
-                enemies.add(new BossEnemy(-200, 160));
-            }
+            Enemy boss = (wave == 15) ? new FinalBoss(-200, 140) : new BossEnemy(-200, 160);
+            boss.maxHealth = (int) (boss.maxHealth * enemyHealthMult());
+            boss.health = boss.maxHealth;
+            enemies.add(boss);
         }
 
         sfxNewWave(wave);
     }
 
-    // Verificar si ya existe torre en esa posición
+    // =====================================================================
+    // TOWER PLACEMENT VALIDATION
+    // =====================================================================
+    /**
+     * Returns true if position is valid for tower placement
+     */
+    boolean isValidTowerPosition(int x, int y) {
+        // Must be within canvas bounds (with margin)
+        if (x < 10 || x > 870 || y < 40 || y > UI_BOTTOM - 10) {
+            return false;
+        }
+        // Must NOT be on path
+        if (y > PATH_TOP - 10 && y < PATH_BOT + 10) {
+            return false;
+        }
+        // Must NOT overlap base structure
+        if (x > BASE_X - 10) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Returns true if another tower already occupies (x,y) area
+     */
     boolean towerExistsAt(int x, int y) {
         for (Tower t : towers) {
-            if (Math.abs(t.x - x) < 32 && Math.abs(t.y - y) < 32) {
+            if (Math.abs(t.x - x) < TOWER_SIZE && Math.abs(t.y - y) < TOWER_SIZE) {
                 return true;
             }
         }
         return false;
     }
 
-    // Verificar que la posición no está dentro del camino
-    boolean isOnPath(int x, int y) {
-        return (y > 96 && y < 284);
-    }
-
-    void drawPixelRect(Graphics2D g, int x, int y, int w, int h, Color c) {
-        g.setColor(c);
-        int sx = (x / PX) * PX;
-        int sy = (y / PX) * PX;
-        int sw = ((w + PX - 1) / PX) * PX;
-        int sh = ((h + PX - 1) / PX) * PX;
-        g.fillRect(sx, sy, sw, sh);
-    }
-
-    void drawMedCross(Graphics2D g, int cx, int cy, int size, Color c) {
-        int t = Math.max(PX, size / 3);
-        g.setColor(c);
-        g.fillRect(cx - t / 2, cy - size / 2, t, size);
-        g.fillRect(cx - size / 2, cy - t / 2, size, t);
-    }
-
+    // =====================================================================
+    // DRAWING HELPERS
+    // =====================================================================
     void drawHealthBar(Graphics2D g, int x, int y, int w, int h, double ratio, Color fg, Color bg) {
         g.setColor(bg);
         g.fillRect(x, y, w, h);
@@ -334,6 +437,56 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
         g.drawRect(x, y, w, h);
     }
 
+    void drawMedCross(Graphics2D g, int cx, int cy, int size, Color c) {
+        int t = Math.max(PX, size / 3);
+        g.setColor(c);
+        g.fillRect(cx - t / 2, cy - size / 2, t, size);
+        g.fillRect(cx - size / 2, cy - t / 2, size, t);
+    }
+
+    Font pixelFont(int size) {
+        return new Font("Monospaced", Font.BOLD, size);
+    }
+
+    void drawPixelHeart(Graphics2D g, int x, int y, Color c) {
+        int[][] heart = {{0, 1, 1, 0, 1, 1, 0}, {1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1}, {0, 1, 1, 1, 1, 1, 0}, {0, 0, 1, 1, 1, 0, 0}, {0, 0, 0, 1, 0, 0, 0}};
+        g.setColor(c);
+        for (int row = 0; row < heart.length; row++) {
+            for (int col = 0; col < heart[row].length; col++) {
+                if (heart[row][col] == 1) {
+                    g.fillRect(x + col * 3, y + row * 3, 3, 3);
+                }
+            }
+        }
+    }
+
+    void drawPixelCoin(Graphics2D g, int x, int y) {
+        int[][] coin = {{0, 1, 1, 1, 0}, {1, 1, 0, 1, 1}, {1, 0, 1, 0, 1}, {1, 1, 0, 1, 1}, {0, 1, 1, 1, 0}};
+        g.setColor(COL_MONEY);
+        for (int row = 0; row < coin.length; row++) {
+            for (int col = 0; col < coin[row].length; col++) {
+                if (coin[row][col] == 1) {
+                    g.fillRect(x + col * 4, y + row * 4, 4, 4);
+                }
+            }
+        }
+    }
+
+    void drawPixelBio(Graphics2D g, int x, int y) {
+        int[][] bio = {{0, 0, 1, 1, 0, 0}, {0, 1, 0, 0, 1, 0}, {1, 0, 1, 1, 0, 1}, {1, 0, 1, 1, 0, 1}, {0, 1, 0, 0, 1, 0}, {0, 0, 1, 1, 0, 0}};
+        g.setColor(new Color(80, 200, 120));
+        for (int row = 0; row < bio.length; row++) {
+            for (int col = 0; col < bio[row].length; col++) {
+                if (bio[row][col] == 1) {
+                    g.fillRect(x + col * 4, y + row * 4, 4, 4);
+                }
+            }
+        }
+    }
+
+    // =====================================================================
+    // PAINT
+    // =====================================================================
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
@@ -341,17 +494,283 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
         g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_OFF);
 
-        // === FONDO ===
+        switch (gameState) {
+            case MENU:
+                drawMenu(g2);
+                break;
+            case SETTINGS:
+                drawSettings(g2);
+                break;
+            case PLAYING:
+                drawGame(g2);
+                break;
+        }
+    }
+
+    // =====================================================================
+    // MENU SCREEN
+    // =====================================================================
+    void drawMenu(Graphics2D g2) {
+        // Background with grid
         g2.setColor(COL_BG);
-        g2.fillRect(0, 0, getWidth(), getHeight());
+        g2.fillRect(0, 0, 900, 600);
         g2.setColor(COL_GRID);
-        for (int gx = 0; gx < getWidth(); gx += 16) {
-            for (int gy = 0; gy < getHeight(); gy += 16) {
+        for (int gx = 0; gx < 900; gx += 16) {
+            for (int gy = 0; gy < 600; gy += 16) {
                 g2.fillRect(gx, gy, 2, 2);
             }
         }
 
-        // === CAMINO ===
+        // Decorative path suggestion
+        g2.setColor(new Color(20, 40, 35));
+        g2.fillRect(0, 240, 900, 120);
+        g2.setColor(COL_PATH_EDGE);
+        for (int px = 0; px < 900; px += PX * 4) {
+            g2.fillRect(px, 240, PX * 2, PX);
+            g2.fillRect(px, 356, PX * 2, PX);
+        }
+
+        // Title with pixel shadow
+        g2.setColor(new Color(0, 80, 40));
+        g2.setFont(pixelFont(54));
+        g2.drawString("TDX", 302, 128);
+        g2.setColor(COL_PATH_EDGE);
+        g2.drawString("TDX", 298, 124);
+
+        g2.setColor(new Color(180, 255, 200, 200));
+        g2.setFont(pixelFont(14));
+        g2.drawString("DEFENSA MEDICA", 308, 152);
+
+        // Animated decorative viruses
+        drawMenuVirus(g2, 80, 160, 0);
+        drawMenuVirus(g2, 760, 130, 1);
+        drawMenuVirus(g2, 140, 420, 2);
+        drawMenuVirus(g2, 700, 400, 3);
+
+        // Buttons
+        String[] labels = {"JUGAR", "AJUSTES"};
+        int[] bx = {300, 300};
+        int[] by = {190, 270};
+        int bw = 300, bh = 60;
+
+        for (int i = 0; i < 2; i++) {
+            boolean hover = mouseX >= bx[i] && mouseX <= bx[i] + bw && mouseY >= by[i] && mouseY <= by[i] + bh;
+            Color btnColor = hover ? COL_PATH_EDGE : new Color(0, 120, 70);
+            Color textColor = hover ? COL_BG : COL_UI_TEXT;
+
+            // Shadow
+            g2.setColor(new Color(0, 0, 0, 80));
+            g2.fillRect(bx[i] + 4, by[i] + 4, bw, bh);
+            // Fill
+            g2.setColor(hover ? new Color(0, 200, 100, 30) : new Color(10, 25, 18));
+            g2.fillRect(bx[i], by[i], bw, bh);
+            // Border
+            g2.setColor(btnColor);
+            g2.setStroke(new BasicStroke(PX));
+            g2.drawRect(bx[i], by[i], bw, bh);
+            // Corner pixels
+            g2.fillRect(bx[i] - PX, by[i] - PX, PX * 2, PX * 2);
+            g2.fillRect(bx[i] + bw - PX, by[i] - PX, PX * 2, PX * 2);
+            g2.fillRect(bx[i] - PX, by[i] + bh - PX, PX * 2, PX * 2);
+            g2.fillRect(bx[i] + bw - PX, by[i] + bh - PX, PX * 2, PX * 2);
+            // Label
+            g2.setColor(textColor);
+            g2.setFont(pixelFont(22));
+            FontMetrics fm = g2.getFontMetrics();
+            int lw = fm.stringWidth(labels[i]);
+            g2.drawString(labels[i], bx[i] + (bw - lw) / 2, by[i] + 38);
+        }
+
+        // Difficulty indicator
+        g2.setColor(new Color(100, 150, 120));
+        g2.setFont(pixelFont(10));
+        String dLabel = "DIFICULTAD: " + difficulty.name();
+        g2.drawString(dLabel, 355, 350);
+
+        // Footer
+        g2.setColor(new Color(60, 100, 80));
+        g2.setFont(pixelFont(9));
+        g2.drawString("Usa el raton para colocar torres  |  Teclas 1-4 para cambiar tipo", 220, 580);
+    }
+
+    void drawMenuVirus(Graphics2D g2, int x, int y, int variant) {
+        int t = (int) (System.currentTimeMillis() / 200) + variant * 17;
+        int wobble = t % 2;
+        int[][] virus = {{0, 0, 1, 1, 1, 1, 0, 0}, {0, 1, 1, 1, 1, 1, 1, 0}, {1, 1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1, 1}, {0, 1, 1, 1, 1, 1, 1, 0}, {0, 0, 1, 1, 1, 1, 0, 0}};
+        Color[] cols = {new Color(180, 30, 30, 120), new Color(140, 20, 160, 120), new Color(30, 120, 60, 120), new Color(200, 100, 20, 120)};
+        g2.setColor(cols[variant % cols.length]);
+        for (int r = 0; r < virus.length; r++) {
+            for (int c = 0; c < virus[r].length; c++) {
+                if (virus[r][c] == 1) {
+                    g2.fillRect(x + c * PX, y + r * PX, PX, PX);
+                }
+            }
+        }
+        // spikes
+        g2.setColor(new Color(cols[variant % cols.length].getRed(), cols[variant % cols.length].getGreen(), cols[variant % cols.length].getBlue(), 80));
+        int cx = x + 16, cy = y + 12;
+        int[][] spikes = {{0, -1}, {1, 0}, {0, 1}, {-1, 0}, {1, -1}, {1, 1}, {-1, 1}, {-1, -1}};
+        for (int[] sp : spikes) {
+            g2.fillRect(cx + sp[0] * (10 + wobble) - PX / 2, cy + sp[1] * (10 + wobble) - PX / 2, PX, PX);
+        }
+    }
+
+    // =====================================================================
+    // SETTINGS SCREEN
+    // =====================================================================
+    void drawSettings(Graphics2D g2) {
+        g2.setColor(COL_BG);
+        g2.fillRect(0, 0, 900, 600);
+        g2.setColor(COL_GRID);
+        for (int gx = 0; gx < 900; gx += 16) {
+            for (int gy = 0; gy < 600; gy += 16) {
+                g2.fillRect(gx, gy, 2, 2);
+            }
+        }
+
+        // Title
+        g2.setColor(COL_PATH_EDGE);
+        g2.setFont(pixelFont(30));
+        g2.drawString("AJUSTES", 330, 80);
+        g2.setColor(new Color(0, 80, 40));
+        g2.fillRect(0, 90, 900, PX);
+        g2.setColor(COL_UI_BORDER);
+        g2.fillRect(0, 90, 900, PX);
+
+        // Difficulty section
+        g2.setColor(COL_UI_TEXT);
+        g2.setFont(pixelFont(16));
+        g2.drawString("DIFICULTAD", 340, 160);
+
+        // Description per difficulty
+        String[] descs = {
+            "Enemigos con -30% de vida y velocidad reducida. Mas dinero inicial ($350).",
+            "Experiencia balanceada. Dinero inicial: $200.",
+            "Enemigos con +50% de vida y velocidad aumentada. Poco dinero ($150)."
+        };
+        String[] diffNames = {"FACIL", "NORMAL", "DIFICIL"};
+        Color[] diffColors = {new Color(60, 200, 80), new Color(80, 180, 255), new Color(220, 60, 60)};
+        Difficulty[] diffs = {Difficulty.EASY, Difficulty.NORMAL, Difficulty.HARD};
+
+        int btnW = 220, btnH = 70;
+        int[] bxArr = {60, 340, 620};
+        int by = 200;
+
+        for (int i = 0; i < 3; i++) {
+            boolean selected = difficulty == diffs[i];
+            boolean hover = mouseX >= bxArr[i] && mouseX <= bxArr[i] + btnW && mouseY >= by && mouseY <= by + btnH;
+
+            g2.setColor(new Color(0, 0, 0, 80));
+            g2.fillRect(bxArr[i] + 4, by + 4, btnW, btnH);
+
+            if (selected) {
+                g2.setColor(new Color(diffColors[i].getRed(), diffColors[i].getGreen(), diffColors[i].getBlue(), 40));
+                g2.fillRect(bxArr[i], by, btnW, btnH);
+            } else {
+                g2.setColor(hover ? new Color(10, 30, 20) : new Color(8, 18, 14));
+                g2.fillRect(bxArr[i], by, btnW, btnH);
+            }
+
+            Color borderC = selected ? diffColors[i] : (hover ? new Color(diffColors[i].getRed(), diffColors[i].getGreen(), diffColors[i].getBlue(), 150) : new Color(0, 80, 50));
+            g2.setColor(borderC);
+            g2.setStroke(new BasicStroke(selected ? PX : 2));
+            g2.drawRect(bxArr[i], by, btnW, btnH);
+
+            if (selected) {
+                g2.setColor(diffColors[i]);
+                g2.fillRect(bxArr[i] - PX, by - PX, PX * 2, PX * 2);
+                g2.fillRect(bxArr[i] + btnW - PX, by - PX, PX * 2, PX * 2);
+                g2.fillRect(bxArr[i] - PX, by + btnH - PX, PX * 2, PX * 2);
+                g2.fillRect(bxArr[i] + btnW - PX, by + btnH - PX, PX * 2, PX * 2);
+            }
+
+            g2.setColor(selected ? diffColors[i] : COL_UI_TEXT);
+            g2.setFont(pixelFont(14));
+            FontMetrics fm = g2.getFontMetrics();
+            g2.drawString(diffNames[i], bxArr[i] + (btnW - fm.stringWidth(diffNames[i])) / 2, by + 28);
+
+            if (selected) {
+                g2.setColor(new Color(diffColors[i].getRed(), diffColors[i].getGreen(), diffColors[i].getBlue(), 200));
+                g2.setFont(pixelFont(9));
+                g2.drawString("< SELECCIONADO >", bxArr[i] + (btnW - g2.getFontMetrics().stringWidth("< SELECCIONADO >")) / 2, by + 50);
+            }
+        }
+
+        // Description box
+        g2.setColor(new Color(10, 25, 18));
+        g2.fillRect(60, 295, 780, 120);
+        g2.setColor(COL_UI_BORDER);
+        g2.setStroke(new BasicStroke(PX));
+        g2.drawRect(60, 295, 780, 120);
+
+        int descIdx = difficulty.ordinal();
+        g2.setColor(diffColors[descIdx]);
+        g2.setFont(pixelFont(10));
+        g2.drawString(descs[descIdx], 80, 320);
+
+        // Stats visual
+        g2.setColor(COL_UI_TEXT);
+        g2.setFont(pixelFont(10));
+        g2.drawString("VIDA ENE:", 80, 355);
+        g2.drawString("VEL ENE:", 80, 375);
+        g2.drawString("DINERO:", 80, 395);
+
+        double[] healthM = {0.7, 1.0, 1.5};
+        double[] speedM = {0.8, 1.0, 1.3};
+        int[] moneyI = {350, 200, 150};
+
+        drawSettingBar(g2, 180, 345, 200, 16, healthM[descIdx] / 1.5, diffColors[descIdx]);
+        drawSettingBar(g2, 180, 365, 200, 16, speedM[descIdx] / 1.3, diffColors[descIdx]);
+        drawSettingBar(g2, 180, 385, 200, 16, moneyI[descIdx] / 350.0, diffColors[descIdx]);
+
+        g2.setColor(COL_UI_TEXT);
+        g2.setFont(pixelFont(9));
+        g2.drawString(String.format("x%.1f", healthM[descIdx]), 390, 355);
+        g2.drawString(String.format("x%.1f", speedM[descIdx]), 390, 375);
+        g2.drawString("$" + moneyI[descIdx], 390, 395);
+
+        // Back button
+        int backX = 330, backY = 430, backW = 220, backH = 50;
+        boolean backHover = mouseX >= backX && mouseX <= backX + backW && mouseY >= backY && mouseY <= backY + backH;
+        g2.setColor(backHover ? new Color(0, 180, 100, 30) : new Color(8, 18, 14));
+        g2.fillRect(backX, backY, backW, backH);
+        g2.setColor(backHover ? COL_PATH_EDGE : new Color(0, 100, 60));
+        g2.setStroke(new BasicStroke(PX));
+        g2.drawRect(backX, backY, backW, backH);
+        g2.setColor(backHover ? COL_BG : COL_UI_TEXT);
+        g2.setFont(pixelFont(16));
+        g2.drawString("< VOLVER", backX + 62, backY + 33);
+    }
+
+    void drawSettingBar(Graphics2D g2, int x, int y, int w, int h, double ratio, Color c) {
+        g2.setColor(new Color(10, 25, 18));
+        g2.fillRect(x, y, w, h);
+        g2.setColor(c);
+        g2.fillRect(x, y, (int) (w * Math.min(1, ratio)), h);
+        g2.setColor(COL_UI_BORDER);
+        g2.drawRect(x, y, w, h);
+    }
+
+    // =====================================================================
+    // GAME SCREEN
+    // =====================================================================
+    void drawGame(Graphics2D g2) {
+        // Background + grid
+        g2.setColor(COL_BG);
+        g2.fillRect(0, 0, 900, 600);
+        g2.setColor(COL_GRID);
+        for (int gx = 0; gx < 900; gx += 16) {
+            for (int gy = 0; gy < 600; gy += 16) {
+                g2.fillRect(gx, gy, 2, 2);
+            }
+        }
+
+        // Valid tower zones highlighted (subtle)
+        g2.setColor(new Color(0, 80, 40, 18));
+        g2.fillRect(0, 40, BASE_X, PATH_TOP);       // top zone
+        g2.fillRect(0, PATH_BOT, BASE_X, UI_BOTTOM - PATH_BOT); // bottom zone
+
+        // Path
         g2.setColor(COL_PATH);
         g2.fillRect(0, 100, 900, 180);
         g2.setColor(COL_PATH_EDGE);
@@ -365,7 +784,7 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
             g2.fillRect(px, 188, PX * 3, PX);
         }
 
-        // === BASE ===
+        // Base
         g2.setColor(new Color(15, 35, 30));
         g2.fillRect(848, 108, 48, 164);
         g2.setColor(COL_BASE);
@@ -380,17 +799,27 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
         g2.setStroke(new BasicStroke(PX));
         g2.drawRect(852, 112, 40, 156);
 
-        // === ENEMIGOS ===
+        // Enemies
         for (Enemy e : enemies) {
             e.draw(g2);
         }
 
-        // === TORRES ===
+        // Towers
         for (Tower t : towers) {
             t.draw(g2);
         }
 
-        // === UI SUPERIOR ===
+        // Mouse hover indicator for tower placement
+        if (!gameOver && !gameWon) {
+            boolean valid = isValidTowerPosition(mouseX, mouseY) && !towerExistsAt(mouseX, mouseY);
+            g2.setColor(valid ? new Color(0, 200, 100, 60) : new Color(200, 50, 50, 60));
+            g2.fillRect(mouseX - TOWER_SIZE / 2, mouseY - TOWER_SIZE / 2, TOWER_SIZE, TOWER_SIZE);
+            g2.setColor(valid ? new Color(0, 200, 100, 150) : new Color(200, 50, 50, 150));
+            g2.setStroke(new BasicStroke(2));
+            g2.drawRect(mouseX - TOWER_SIZE / 2, mouseY - TOWER_SIZE / 2, TOWER_SIZE, TOWER_SIZE);
+        }
+
+        // Top UI
         g2.setColor(COL_UI_BG);
         g2.fillRect(0, 0, 900, 36);
         g2.setColor(COL_UI_BORDER);
@@ -411,11 +840,17 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
         drawPixelBio(g2, 192, 8);
         g2.setColor(COL_WAVE);
         g2.setFont(pixelFont(13));
-        g2.drawString("OLA " + wave + "/" + MAX_WAVE, 216, 22);
+        g2.drawString("OLEADA " + wave + "/" + MAX_WAVE, 216, 22);
 
-        // Barra de progreso de oleadas
-        int progW = 400;
-        int progX = 480;
+        // Difficulty badge
+        Color[] dCols = {new Color(60, 200, 80), new Color(80, 180, 255), new Color(220, 60, 60)};
+        String[] dNames = {"FACIL", "NORMAL", "DIFICIL"};
+        g2.setColor(dCols[difficulty.ordinal()]);
+        g2.setFont(pixelFont(9));
+        g2.drawString("[" + dNames[difficulty.ordinal()] + "]", 380, 22);
+
+        // Progress bar
+        int progW = 360, progX = 500;
         g2.setColor(new Color(10, 30, 20));
         g2.fillRect(progX, 8, progW, 20);
         g2.setColor(new Color(0, 180, 100));
@@ -424,12 +859,9 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
         g2.drawRect(progX, 8, progW, 20);
         g2.setColor(COL_UI_TEXT);
         g2.setFont(pixelFont(9));
-        g2.drawString("PROGRESO DEFENSA", progX + 130, 22);
+        g2.drawString("PROGRESO DEFENSA", progX + 110, 22);
 
-        g2.setColor(new Color(0, 180, 80, 60));
-        g2.fillRect(300, 0, 600, 36);
-
-        // === MENÚ INFERIOR ===
+        // Bottom UI
         g2.setColor(COL_UI_BG);
         g2.fillRect(0, 490, 900, 110);
         g2.setColor(COL_UI_BORDER);
@@ -443,22 +875,14 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
 
         String[] types = {"NORMAL", "FIRE", "ICE", "ELEC"};
         int[] costs = {50, 70, 60, 80};
-        String[] labels = {"JERINGA", "LASER UV", "CRIOGENO", "ELECTROD."};
+        String[] labels = {"JERINGA", "IBUPROFENO", "ANALGESICO", "AMOXICILINA"};
         String[] keys = {"[1]", "[2]", "[3]", "[4]"};
-        Color[] colors = {
-            new Color(180, 255, 200),
-            new Color(255, 120, 60),
-            new Color(80, 200, 255),
-            new Color(255, 230, 60)
-        };
+        Color[] colors = {new Color(180, 255, 200), new Color(255, 120, 60), new Color(80, 200, 255), new Color(255, 230, 60)};
         int[] xPos = {20, 240, 460, 680};
 
         for (int i = 0; i < types.length; i++) {
             boolean selected = selectedTower.equals(types[i]);
-            int bx = xPos[i];
-            int by = 506;
-            int bw = 200;
-            int bh = 84;
+            int bx = xPos[i], by = 506, bw = 200, bh = 84;
             if (selected) {
                 g2.setColor(new Color(colors[i].getRed(), colors[i].getGreen(), colors[i].getBlue(), 30));
                 g2.fillRect(bx, by, bw, bh);
@@ -476,7 +900,7 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
                 g2.setStroke(new BasicStroke(PX));
                 g2.drawRect(bx, by, bw, bh);
             }
-            drawTowerIcon(g2, bx + 12, by + 16, types[i], colors[i], selected);
+            drawTowerIcon(g2, bx + 12, by + 16, types[i], colors[i]);
             g2.setColor(selected ? colors[i] : COL_UI_TEXT);
             g2.setFont(pixelFont(11));
             g2.drawString(labels[i], bx + 52, by + 26);
@@ -495,18 +919,18 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
             }
         }
 
-        // === PANTALLAS DE FIN ===
+        // End screens
         if (gameOver) {
             g2.setColor(new Color(0, 0, 0, 180));
             g2.fillRect(0, 0, 900, 600);
             g2.setColor(new Color(220, 50, 60));
             g2.setFont(pixelFont(36));
-            g2.drawString("GAME OVER", 280, 250);
+            g2.drawString("GAME OVER", 280, 220);
             g2.setColor(COL_UI_TEXT);
             g2.setFont(pixelFont(16));
-            g2.drawString("La base fue destruida en la oleada " + wave, 220, 310);
-            g2.setFont(pixelFont(12));
-            g2.drawString("Reinicia la aplicacion para jugar de nuevo", 230, 360);
+            g2.drawString("La base fue destruida en la oleada " + wave, 220, 280);
+            // Back to menu button
+            drawEndButton(g2, 300, 320, 300, 50, "VOLVER AL MENU");
         }
 
         if (gameWon) {
@@ -514,74 +938,32 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
             g2.fillRect(0, 0, 900, 600);
             g2.setColor(new Color(0, 220, 120));
             g2.setFont(pixelFont(28));
-            g2.drawString("¡DEFENSA COMPLETADA!", 195, 240);
+            g2.drawString("DEFENSA COMPLETADA!", 190, 220);
             g2.setColor(COL_MONEY);
             g2.setFont(pixelFont(18));
-            g2.drawString("Sobreviviste las 15 oleadas", 255, 300);
+            g2.drawString("Sobreviviste las 15 oleadas", 255, 270);
             g2.setColor(COL_UI_TEXT);
             g2.setFont(pixelFont(13));
-            g2.drawString("Puntuacion final: $" + money + "  |  Vida: " + baseHealth, 250, 350);
+            g2.drawString("Puntuacion: $" + money + "  |  Vida: " + baseHealth, 270, 310);
+            drawEndButton(g2, 300, 340, 300, 50, "VOLVER AL MENU");
         }
     }
 
-    Font pixelFont(int size) {
-        return new Font("Monospaced", Font.BOLD, size);
+    void drawEndButton(Graphics2D g2, int x, int y, int w, int h, String label) {
+        boolean hover = mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h;
+        g2.setColor(hover ? new Color(0, 200, 100, 40) : new Color(10, 25, 18));
+        g2.fillRect(x, y, w, h);
+        g2.setColor(hover ? COL_PATH_EDGE : new Color(0, 120, 70));
+        g2.setStroke(new BasicStroke(PX));
+        g2.drawRect(x, y, w, h);
+        g2.setColor(hover ? COL_BG : COL_UI_TEXT);
+        g2.setFont(pixelFont(14));
+        FontMetrics fm = g2.getFontMetrics();
+        g2.drawString(label, x + (w - fm.stringWidth(label)) / 2, y + h / 2 + 5);
     }
 
-    void drawPixelHeart(Graphics2D g, int x, int y, Color c) {
-        int[][] heart = {
-            {0, 1, 1, 0, 1, 1, 0},
-            {1, 1, 1, 1, 1, 1, 1},
-            {1, 1, 1, 1, 1, 1, 1},
-            {0, 1, 1, 1, 1, 1, 0},
-            {0, 0, 1, 1, 1, 0, 0},
-            {0, 0, 0, 1, 0, 0, 0},};
-        g.setColor(c);
-        for (int row = 0; row < heart.length; row++) {
-            for (int col = 0; col < heart[row].length; col++) {
-                if (heart[row][col] == 1) {
-                    g.fillRect(x + col * 3, y + row * 3, 3, 3);
-                }
-            }
-        }
-    }
-
-    void drawPixelCoin(Graphics2D g, int x, int y) {
-        int[][] coin = {
-            {0, 1, 1, 1, 0},
-            {1, 1, 0, 1, 1},
-            {1, 0, 1, 0, 1},
-            {1, 1, 0, 1, 1},
-            {0, 1, 1, 1, 0},};
-        g.setColor(COL_MONEY);
-        for (int row = 0; row < coin.length; row++) {
-            for (int col = 0; col < coin[row].length; col++) {
-                if (coin[row][col] == 1) {
-                    g.fillRect(x + col * 4, y + row * 4, 4, 4);
-                }
-            }
-        }
-    }
-
-    void drawPixelBio(Graphics2D g, int x, int y) {
-        g.setColor(new Color(80, 200, 120));
-        int[][] bio = {
-            {0, 0, 1, 1, 0, 0},
-            {0, 1, 0, 0, 1, 0},
-            {1, 0, 1, 1, 0, 1},
-            {1, 0, 1, 1, 0, 1},
-            {0, 1, 0, 0, 1, 0},
-            {0, 0, 1, 1, 0, 0},};
-        for (int row = 0; row < bio.length; row++) {
-            for (int col = 0; col < bio[row].length; col++) {
-                if (bio[row][col] == 1) {
-                    g.fillRect(x + col * 4, y + row * 4, 4, 4);
-                }
-            }
-        }
-    }
-
-    void drawTowerIcon(Graphics2D g, int x, int y, String type, Color c, boolean selected) {
+    // Tower icons for bottom UI
+    void drawTowerIcon(Graphics2D g, int x, int y, String type, Color c) {
         switch (type) {
             case "NORMAL":
                 drawIconSyringe(g, x, y, c);
@@ -613,48 +995,44 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
         g.fillRect(x + 28, y + 10, 8, 4);
         g.setColor(new Color(255, 60, 60));
         g.fillRect(x + 4, y + 10, 8, 8);
-        g.setColor(new Color(255, 100, 60, 180));
-        g.fillRect(x + 36, y + 11, 4, 2);
     }
 
     void drawIconCryo(Graphics2D g, int x, int y, Color c) {
         g.setColor(c);
         drawMedCross(g, x + 20, y + 12, 20, c);
-        g.setColor(new Color(180, 230, 255));
-        g.fillRect(x + 18, y + 10, 4, 4);
     }
 
     void drawIconElec(Graphics2D g, int x, int y, Color c) {
-        int[][] bolt = {
-            {0, 0, 1, 1, 1},
-            {0, 1, 1, 0, 0},
-            {1, 1, 1, 0, 0},
-            {0, 1, 0, 0, 0},
-            {1, 0, 0, 0, 0},};
+        int[][] bolt = {{0, 0, 1, 1, 1}, {0, 1, 1, 0, 0}, {1, 1, 1, 0, 0}, {0, 1, 0, 0, 0}, {1, 0, 0, 0, 0}};
         g.setColor(c);
-        for (int row = 0; row < bolt.length; row++) {
-            for (int col = 0; col < bolt[row].length; col++) {
-                if (bolt[row][col] == 1) {
-                    g.fillRect(x + 8 + col * 5, y + 4 + row * 5, 5, 5);
+        for (int r = 0; r < bolt.length; r++) {
+            for (int col = 0; col < bolt[r].length; col++) {
+                if (bolt[r][col] == 1) {
+                    g.fillRect(x + 8 + col * 5, y + 4 + r * 5, 5, 5);
                 }
             }
         }
     }
 
+    // =====================================================================
+    // GAME LOOP
+    // =====================================================================
     @Override
     public void actionPerformed(ActionEvent e) {
+        if (gameState == GameState.MENU || gameState == GameState.SETTINGS) {
+            repaint();
+            return;
+        }
         if (gameOver || gameWon) {
             return;
         }
-
-        boolean bossWasAlive = enemies.stream().anyMatch(en -> en instanceof BossEnemy);
 
         Iterator<Enemy> it = enemies.iterator();
         while (it.hasNext()) {
             Enemy en = it.next();
             en.move();
             if (en.x > 850) {
-                baseHealth -= (en instanceof BossEnemy ? 25 : 10);
+                baseHealth -= (en instanceof BossEnemy ? 25 : (en instanceof TankEnemy ? 20 : 10));
                 it.remove();
                 if (baseHealth <= 0) {
                     baseHealth = 0;
@@ -669,13 +1047,12 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
             t.update(enemies);
         }
 
-        // Detectar muertes
         java.util.List<Enemy> toRemove = new ArrayList<>();
         for (Enemy en : enemies) {
             if (en.health <= 0) {
                 toRemove.add(en);
                 money += en.reward;
-                if (en instanceof BossEnemy) {
+                if (en instanceof BossEnemy || en instanceof FinalBoss) {
                     sfxBossDeath();
                 } else {
                     sfxEnemyDeath();
@@ -699,18 +1076,67 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
         repaint();
     }
 
+    // =====================================================================
+    // MOUSE
+    // =====================================================================
+    @Override
     public void mouseClicked(MouseEvent e) {
-        int cost = 50;
+        int mx = e.getX(), my = e.getY();
 
-        switch (selectedTower) {
-            case "FIRE": cost = 70; break;
-            case "ICE": cost = 60; break;
-            case "ELEC": cost = 80; break;
-        }
+        if (gameState == GameState.MENU) {
+            // JUGAR button
+            if (mx >= 300 && mx <= 500 && my >= 190 && my <= 250) {
+                sfxMenuClick();
+                startGame();
+            } // AJUSTES button
+            else if (mx >= 300 && mx <= 500 && my >= 270 && my <= 330) {
+                sfxMenuClick();
+                gameState = GameState.SETTINGS;
+            }
+        } else if (gameState == GameState.SETTINGS) {
+            Difficulty[] diffs = {Difficulty.EASY, Difficulty.NORMAL, Difficulty.HARD};
+            int[] bxArr = {60, 340, 620};
+            int btnW = 220, btnH = 70, by = 200;
+            for (int i = 0; i < 3; i++) {
+                if (mx >= bxArr[i] && mx <= bxArr[i] + btnW && my >= by && my <= by + btnH) {
+                    sfxMenuClick();
+                    difficulty = diffs[i];
+                }
+            }
+            // VOLVER button
+            if (mx >= 330 && mx <= 570 && my >= 430 && my <= 480) {
+                sfxMenuClick();
+                gameState = GameState.MENU;
+            }
+        } else if (gameState == GameState.PLAYING) {
+            if (gameOver || gameWon) {
+                // VOLVER AL MENU button
+                if (mx >= 300 && mx <= 600 && my >= 320 && my <= 370) {
+                    stopBGMusic();
+                    gameState = GameState.MENU;
+                }
+                return;
+            }
 
-        if (money >= cost) {
-            towers.add(new Tower(e.getX(), e.getY(), selectedTower));
-            money -= cost;
+            int cost = switch (selectedTower) {
+                case "FIRE" ->
+                    70;
+                case "ICE" ->
+                    60;
+                case "ELEC" ->
+                    80;
+                default ->
+                    50;
+            };
+
+            if (money >= cost) {
+                if (isValidTowerPosition(mx, my) && !towerExistsAt(mx, my)) {
+                    towers.add(new Tower(mx, my, selectedTower));
+                    money -= cost;
+                    sfxTowerPlaced();
+                }
+                // If invalid position: silently ignore (player gets visual feedback from hover)
+            }
         }
     }
 
@@ -741,6 +1167,9 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
         });
     }
 
+    // =====================================================================
+    // MAIN
+    // =====================================================================
     public static void main(String[] args) {
         JFrame frame = new JFrame("TDX - DEFENSA MEDICA");
         frame.getContentPane().setBackground(new Color(10, 18, 25));
@@ -749,7 +1178,21 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
         frame.add(game);
         frame.pack();
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.setLocationRelativeTo(null);
         frame.setVisible(true);
+    }
+
+    // MouseListener stubs
+    public void mousePressed(MouseEvent e) {
+    }
+
+    public void mouseReleased(MouseEvent e) {
+    }
+
+    public void mouseEntered(MouseEvent e) {
+    }
+
+    public void mouseExited(MouseEvent e) {
     }
 
     // =====================================================================
@@ -778,13 +1221,7 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
             Graphics2D g2 = (Graphics2D) g;
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
             int wobble = (animTick / 6) % 2 == 0 ? 0 : 1;
-            int[][] virus = {
-                {0, 0, 1, 1, 1, 1, 0, 0},
-                {0, 1, 1, 1, 1, 1, 1, 0},
-                {1, 1, 1, 1, 1, 1, 1, 1},
-                {1, 1, 1, 1, 1, 1, 1, 1},
-                {0, 1, 1, 1, 1, 1, 1, 0},
-                {0, 0, 1, 1, 1, 1, 0, 0},};
+            int[][] virus = {{0, 0, 1, 1, 1, 1, 0, 0}, {0, 1, 1, 1, 1, 1, 1, 0}, {1, 1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1, 1}, {0, 1, 1, 1, 1, 1, 1, 0}, {0, 0, 1, 1, 1, 1, 0, 0}};
             g2.setColor(new Color(0, 0, 0, 80));
             for (int row = 0; row < virus.length; row++) {
                 for (int col = 0; col < virus[row].length; col++) {
@@ -804,27 +1241,19 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
             g2.setColor(new Color(255, 120, 120));
             g2.fillRect(x + PX, y, PX * 2, PX);
             g2.fillRect(x, y + PX, PX, PX);
-            g2.setColor(new Color(220, 60, 60));
             int cx = x + 16, cy = y + 12;
             int[][] spikes = {{0, -1}, {1, 0}, {0, 1}, {-1, 0}, {1, -1}, {1, 1}, {-1, 1}, {-1, -1}};
+            g2.setColor(new Color(220, 60, 60));
             for (int[] sp : spikes) {
-                int sx = cx + sp[0] * (12 + wobble);
-                int sy = cy + sp[1] * (12 + wobble);
-                g2.fillRect(sx - PX / 2, sy - PX / 2, PX, PX);
+                g2.fillRect(cx + sp[0] * (12 + wobble) - PX / 2, cy + sp[1] * (12 + wobble) - PX / 2, PX, PX);
             }
             g2.setColor(new Color(255, 220, 220));
             g2.fillRect(x + PX * 2, y + PX, PX, PX);
             g2.fillRect(x + PX * 5, y + PX, PX, PX);
-            int bw = 32;
-            drawHealthBar(g2, x, y - 8, bw, PX, (double) health / maxHealth,
-                    health > maxHealth / 2 ? new Color(60, 200, 80) : new Color(220, 60, 60),
-                    new Color(20, 40, 30));
+            drawHealthBar(g2, x, y - 8, 32, PX, (double) health / maxHealth, health > maxHealth / 2 ? new Color(60, 200, 80) : new Color(220, 60, 60), new Color(20, 40, 30));
         }
     }
 
-    // =====================================================================
-    // ENEMIGO RAPIDO — pequeño, muy veloz, poca vida
-    // =====================================================================
     class SpeedEnemy extends Enemy {
 
         SpeedEnemy(int x, int y) {
@@ -839,12 +1268,7 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
         void draw(Graphics g) {
             Graphics2D g2 = (Graphics2D) g;
             int wobble = (animTick / 3) % 2;
-            // Cuerpo más pequeño y alargado — color naranja ácido
-            int[][] fast = {
-                {0, 1, 1, 1, 0},
-                {1, 1, 1, 1, 1},
-                {1, 1, 1, 1, 1},
-                {0, 1, 1, 1, 0},};
+            int[][] fast = {{0, 1, 1, 1, 0}, {1, 1, 1, 1, 1}, {1, 1, 1, 1, 1}, {0, 1, 1, 1, 0}};
             g2.setColor(new Color(255, 150, 0));
             for (int row = 0; row < fast.length; row++) {
                 for (int col = 0; col < fast[row].length; col++) {
@@ -853,26 +1277,20 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
                     }
                 }
             }
-            // estela de velocidad
             g2.setColor(new Color(255, 200, 50, 100));
             for (int i = 1; i <= 3; i++) {
                 g2.fillRect(x - i * 6 - wobble, y + PX, PX * 3, PX * 2);
             }
-            // ojos
             g2.setColor(Color.WHITE);
             g2.fillRect(x + PX, y + PX, PX, PX);
             g2.fillRect(x + PX * 3, y + PX, PX, PX);
             g2.setColor(new Color(255, 80, 0));
             g2.setFont(new Font("Monospaced", Font.BOLD, 8));
             g2.drawString(">>", x, y - 6);
-            drawHealthBar(g2, x, y - 8, 20, PX, (double) health / maxHealth,
-                    new Color(255, 160, 0), new Color(20, 20, 10));
+            drawHealthBar(g2, x, y - 8, 20, PX, (double) health / maxHealth, new Color(255, 160, 0), new Color(20, 20, 10));
         }
     }
 
-    // =====================================================================
-    // ENEMIGO BLINDADO — lento, armadura que absorbe primer impacto
-    // =====================================================================
     class ShieldEnemy extends Enemy {
 
         int shieldHP = 40;
@@ -888,13 +1306,7 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
         @Override
         void draw(Graphics g) {
             Graphics2D g2 = (Graphics2D) g;
-            int[][] body = {
-                {0, 1, 1, 1, 1, 0},
-                {1, 1, 1, 1, 1, 1},
-                {1, 1, 1, 1, 1, 1},
-                {1, 1, 1, 1, 1, 1},
-                {0, 1, 1, 1, 1, 0},};
-            // cuerpo verde oscuro
+            int[][] body = {{0, 1, 1, 1, 1, 0}, {1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1}, {0, 1, 1, 1, 1, 0}};
             g2.setColor(new Color(30, 120, 60));
             for (int row = 0; row < body.length; row++) {
                 for (int col = 0; col < body[row].length; col++) {
@@ -903,25 +1315,19 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
                     }
                 }
             }
-            // escudo (frontal)
             if (shieldHP > 0) {
                 g2.setColor(new Color(100, 200, 255, 180));
                 g2.fillRect(x + PX * 5, y - PX, PX * 2, PX * 7);
                 g2.setColor(new Color(200, 240, 255));
                 g2.fillRect(x + PX * 5, y, PX, PX * 5);
             }
-            // ojos amarillos
             g2.setColor(new Color(255, 240, 50));
             g2.fillRect(x + PX, y + PX, PX, PX);
             g2.fillRect(x + PX * 4, y + PX, PX, PX);
-            drawHealthBar(g2, x, y - 8, 32, PX, (double) health / maxHealth,
-                    new Color(30, 200, 80), new Color(10, 30, 15));
+            drawHealthBar(g2, x, y - 8, 32, PX, (double) health / maxHealth, new Color(30, 200, 80), new Color(10, 30, 15));
         }
     }
 
-    // =====================================================================
-    // ENEMIGO TANQUE — enorme, lentísimo, muchísima vida
-    // =====================================================================
     class TankEnemy extends Enemy {
 
         TankEnemy(int x, int y) {
@@ -936,35 +1342,26 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
         void draw(Graphics g) {
             Graphics2D g2 = (Graphics2D) g;
             int wobble = (animTick / 10) % 2;
-            // cuerpo grande gris acero
             g2.setColor(new Color(80, 80, 100));
             g2.fillRect(x, y, PX * 12, PX * 10);
-            // detalles placa
             g2.setColor(new Color(120, 120, 150));
             g2.fillRect(x + PX, y + PX, PX * 10, PX * 2);
             g2.fillRect(x + PX, y + PX * 7, PX * 10, PX * 2);
-            // ruedas
             g2.setColor(new Color(40, 40, 50));
             g2.fillRect(x, y + PX * 8, PX * 4, PX * 3);
             g2.fillRect(x + PX * 8, y + PX * 8, PX * 4, PX * 3);
-            // cañón
             g2.setColor(new Color(60, 60, 80));
             g2.fillRect(x + PX * 10, y + PX * 4, PX * 5, PX * 2);
-            // ojos rojos
             g2.setColor(new Color(255, 50, 50));
             g2.fillRect(x + PX * 2, y + PX * 3, PX * 2, PX * 2);
             g2.fillRect(x + PX * 7, y + PX * 3, PX * 2, PX * 2);
             g2.setColor(new Color(200, 80, 80));
             g2.setFont(new Font("Monospaced", Font.BOLD, 8));
             g2.drawString("TANK", x + 8, y - 6);
-            drawHealthBar(g2, x, y - 8, PX * 12, PX, (double) health / maxHealth,
-                    new Color(60, 120, 220), new Color(10, 10, 25));
+            drawHealthBar(g2, x, y - 8, PX * 12, PX, (double) health / maxHealth, new Color(60, 120, 220), new Color(10, 10, 25));
         }
     }
 
-    // =====================================================================
-    // BOSS NORMAL — aparece cada 3 oleadas (excepto 15)
-    // =====================================================================
     class BossEnemy extends Enemy {
 
         BossEnemy(int x, int y) {
@@ -978,18 +1375,8 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
         @Override
         void draw(Graphics g) {
             Graphics2D g2 = (Graphics2D) g;
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
             int wobble = (animTick / 8) % 2;
-            int[][] boss = {
-                {0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0},
-                {0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0},
-                {0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0},
-                {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-                {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-                {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-                {0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0},
-                {0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0},
-                {0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0},};
+            int[][] boss = {{0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0}, {0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0}, {0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0}, {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, {0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0}, {0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0}, {0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0}};
             g2.setColor(new Color(0, 0, 0, 100));
             for (int row = 0; row < boss.length; row++) {
                 for (int col = 0; col < boss[row].length; col++) {
@@ -1015,34 +1402,16 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
                     }
                 }
             }
-            g2.setColor(new Color(220, 140, 240));
-            g2.fillRect(x + PX * 2, y + PX, PX * 3, PX);
-            g2.setColor(new Color(180, 50, 200));
-            int cx2 = x + 24, cy2 = y + 18;
-            int[][] spikes = {{0, -1}, {1, 0}, {0, 1}, {-1, 0}, {1, -1}, {1, 1}, {-1, 1}, {-1, -1}};
-            for (int[] sp : spikes) {
-                int sx = cx2 + sp[0] * (20 + wobble * 2);
-                int sy = cy2 + sp[1] * (20 + wobble * 2);
-                g2.fillRect(sx - PX, sy - PX, PX * 2, PX * 2);
-                g2.fillRect(sx, sy, PX, PX);
-            }
             g2.setColor(new Color(255, 60, 60));
             g2.fillRect(x + PX * 3, y + PX * 2, PX * 2, PX * 2);
             g2.fillRect(x + PX * 7, y + PX * 2, PX * 2, PX * 2);
-            g2.setColor(Color.BLACK);
-            g2.fillRect(x + PX * 3 + 2, y + PX * 2 + 2, PX, PX);
-            g2.fillRect(x + PX * 7 + 2, y + PX * 2 + 2, PX, PX);
             g2.setColor(new Color(220, 60, 220));
             g2.setFont(new Font("Monospaced", Font.BOLD, 9));
             g2.drawString("JEFE", x + 12, y - 10);
-            drawHealthBar(g2, x, y - 6, 48, PX, (double) health / maxHealth,
-                    new Color(180, 50, 200), new Color(20, 10, 25));
+            drawHealthBar(g2, x, y - 6, 48, PX, (double) health / maxHealth, new Color(180, 50, 200), new Color(20, 10, 25));
         }
     }
 
-    // =====================================================================
-    // BOSS FINAL — oleada 15, monstruo definitivo
-    // =====================================================================
     class FinalBoss extends Enemy {
 
         FinalBoss(int x, int y) {
@@ -1057,20 +1426,7 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
         void draw(Graphics g) {
             Graphics2D g2 = (Graphics2D) g;
             int wobble = (animTick / 4) % 3;
-            // Cuerpo enorme rojo-negro (16x14 bloques)
-            int[][] final_ = {
-                {0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0},
-                {0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0},
-                {0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0},
-                {0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0},
-                {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-                {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-                {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-                {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-                {0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0},
-                {0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0},
-                {0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0},};
-            // sombra
+            int[][] final_ = {{0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0}, {0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0}, {0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0}, {0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0}, {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, {0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0}, {0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0}, {0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0}};
             g2.setColor(new Color(0, 0, 0, 120));
             for (int row = 0; row < final_.length; row++) {
                 for (int col = 0; col < final_[row].length; col++) {
@@ -1079,7 +1435,6 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
                     }
                 }
             }
-            // cuerpo
             g2.setColor(new Color(160, 20, 20));
             for (int row = 0; row < final_.length; row++) {
                 for (int col = 0; col < final_[row].length; col++) {
@@ -1088,30 +1443,6 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
                     }
                 }
             }
-            // patrón interior llameante
-            g2.setColor(new Color(220, 80, 0));
-            int[][] inner = {{0, 1, 1, 1, 0}, {1, 0, 1, 0, 1}, {0, 1, 1, 1, 0}};
-            for (int row = 0; row < inner.length; row++) {
-                for (int col = 0; col < inner[row].length; col++) {
-                    if (inner[row][col] == 1) {
-                        g2.fillRect(x + 20 + col * PX, y + 16 + row * PX, PX, PX);
-                    }
-                }
-            }
-            // brillo rojo superior
-            g2.setColor(new Color(255, 100, 100));
-            g2.fillRect(x + PX * 3, y + PX, PX * 5, PX);
-            // espículas masivas
-            g2.setColor(new Color(200, 30, 30));
-            int[][] spikes = {{0, -1}, {1, 0}, {0, 1}, {-1, 0}, {1, -1}, {1, 1}, {-1, 1}, {-1, -1}, {2, -1}, {-2, -1}};
-            int cx3 = x + 32, cy3 = y + 22;
-            for (int[] sp : spikes) {
-                int sx = cx3 + sp[0] * (28 + wobble * 3);
-                int sy = cy3 + sp[1] * (24 + wobble * 2);
-                g2.fillRect(sx - PX, sy - PX, PX * 3, PX * 3);
-                g2.fillRect(sx, sy, PX, PX);
-            }
-            // ojos demoníacos (3 ojos)
             g2.setColor(new Color(255, 200, 0));
             g2.fillRect(x + PX * 3, y + PX * 3, PX * 3, PX * 3);
             g2.fillRect(x + PX * 10, y + PX * 3, PX * 3, PX * 3);
@@ -1119,20 +1450,15 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
             g2.setColor(Color.BLACK);
             g2.fillRect(x + PX * 4, y + PX * 4, PX, PX);
             g2.fillRect(x + PX * 11, y + PX * 4, PX, PX);
-            g2.fillRect(x + PX * 7 + 2, y + PX * 2 + 2, PX, PX);
-            // etiqueta
             g2.setColor(new Color(255, 60, 0));
             g2.setFont(new Font("Monospaced", Font.BOLD, 11));
             g2.drawString("!! JEFE FINAL !!", x - 4, y - 12);
-            // barra de vida grande
-            drawHealthBar(g2, x - 4, y - 8, 80, PX + 2,
-                    (double) health / maxHealth,
-                    new Color(255, 80, 0), new Color(30, 5, 5));
+            drawHealthBar(g2, x - 4, y - 8, 80, PX + 2, (double) health / maxHealth, new Color(255, 80, 0), new Color(30, 5, 5));
         }
     }
 
     // =====================================================================
-    // TOWER
+    // TOWER — with aiming
     // =====================================================================
     class Tower {
 
@@ -1142,6 +1468,7 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
         String type;
         Enemy target = null;
         int animTick = 0;
+        double aimAngle = 0; // radians, angle toward target
 
         Tower(int x, int y, String type) {
             this.x = x;
@@ -1155,57 +1482,59 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
             }
             animTick++;
             target = null;
+            // Find nearest enemy in range
+            double bestDist = Double.MAX_VALUE;
             for (Enemy e : enemies) {
-                if (inRange(e) && cooldown == 0) {
+                double dist = Math.hypot(x + 14 - (e.x + 16), y + 10 - (e.y + 12));
+                if (dist < range && dist < bestDist) {
+                    bestDist = dist;
                     target = e;
-                    int damage = 0;
-                    switch (type) {
-                        case "FIRE":
-                            damage = 25;
-                            break;
-                        case "ICE":
-                            damage = 6;
-                            if (e.speed > 1) {
-                                e.speed--;
-                            }
-                            break;
-                        case "ELEC":
-                            damage = 18;
-                            break;
-                        default:
-                            damage = 15;
-                    }
+                }
+            }
+            if (target != null) {
+                // Always update aim angle toward target
+                aimAngle = Math.atan2((target.y + 12) - (y + 10), (target.x + 16) - (x + 14));
+
+                if (cooldown == 0) {
+                    int damage = switch (type) {
+                        case "FIRE" ->
+                            25;
+                        case "ICE" ->
+                            6;
+                        case "ELEC" ->
+                            18;
+                        default ->
+                            15;
+                    };
                     damage += wave * 2;
 
-                    // Escudos absorben daño primero
-                    if (e instanceof ShieldEnemy) {
-                        ShieldEnemy se = (ShieldEnemy) e;
+                    if (type.equals("ICE") && target.speed > 1) {
+                        target.speed--;
+                    }
+
+                    if (target instanceof ShieldEnemy) {
+                        ShieldEnemy se = (ShieldEnemy) target;
                         if (se.shieldHP > 0) {
                             se.shieldHP -= damage;
                             if (se.shieldHP < 0) {
-                                e.health += se.shieldHP; // remanente daña vida
+                                target.health += se.shieldHP;
                                 se.shieldHP = 0;
                             }
                         } else {
-                            e.health -= damage;
+                            target.health -= damage;
                         }
                     } else {
-                        e.health -= damage;
+                        target.health -= damage;
                     }
-
                     cooldown = 20;
-                    break;
                 }
             }
-        }
-
-        boolean inRange(Enemy e) {
-            return Math.hypot(x - e.x, y - e.y) < range;
         }
 
         void draw(Graphics g) {
             Graphics2D g2 = (Graphics2D) g;
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
+
             Color mainColor, accentColor;
             switch (type) {
                 case "FIRE":
@@ -1225,9 +1554,10 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
                     accentColor = new Color(180, 255, 200);
                     break;
             }
+
+            // Range circle (dotted)
             g2.setColor(new Color(mainColor.getRed(), mainColor.getGreen(), mainColor.getBlue(), 18));
-            int rd = range * 2;
-            g2.fillOval(x - range + 12, y - range + 12, rd, rd);
+            g2.fillOval(x - range + 12, y - range + 12, range * 2, range * 2);
             g2.setColor(new Color(mainColor.getRed(), mainColor.getGreen(), mainColor.getBlue(), 40));
             g2.setStroke(new BasicStroke(PX));
             for (int deg = 0; deg < 360; deg += 12) {
@@ -1236,40 +1566,52 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
                 int ry = (int) (y + 12 + (range - 4) * Math.sin(rad));
                 g2.fillRect(rx, ry, PX, PX);
             }
+
+            // Base
             g2.setColor(new Color(20, 50, 35));
             g2.fillRect(x - 2, y + 18, 32, 8);
             g2.setColor(new Color(0, 100, 60));
             g2.fillRect(x, y + 20, 28, 4);
+
+            // Body (fixed)
             switch (type) {
                 case "NORMAL":
-                    drawTowerNormal(g2, x, y, mainColor, accentColor);
+                    drawTowerBody_Normal(g2, x, y, mainColor, accentColor);
                     break;
                 case "FIRE":
-                    drawTowerFire(g2, x, y, mainColor, accentColor);
+                    drawTowerBody_Fire(g2, x, y, mainColor, accentColor);
                     break;
                 case "ICE":
-                    drawTowerIce(g2, x, y, mainColor, accentColor);
+                    drawTowerBody_Ice(g2, x, y, mainColor, accentColor);
                     break;
                 case "ELEC":
-                    drawTowerElec(g2, x, y, mainColor, accentColor);
+                    drawTowerBody_Elec(g2, x, y, mainColor, accentColor);
                     break;
             }
+
+            // === ROTATING BARREL toward target ===
+            int bx = x + 14, by = y + 10; // center of tower
+            AffineTransform old = g2.getTransform();
+            g2.rotate(aimAngle, bx, by);
+            g2.setColor(accentColor);
+            g2.fillRect(bx, by - 2, 18, 4); // barrel pointing right, rotated
+            g2.setColor(mainColor);
+            g2.fillRect(bx + 14, by - 1, 6, 2); // tip
+            g2.setTransform(old);
+
+            // Projectile beam
             if (target != null && cooldown > 15) {
-                drawPixelBeam(g2, x + 14, y + 10, target.x + 10, target.y + 10, mainColor, accentColor);
+                drawPixelBeam(g2, bx, by, target.x + 16, target.y + 12, mainColor, accentColor);
             }
         }
 
-        void drawTowerNormal(Graphics2D g, int x, int y, Color mc, Color ac) {
+        void drawTowerBody_Normal(Graphics2D g, int x, int y, Color mc, Color ac) {
             g.setColor(new Color(30, 60, 50));
             g.fillRect(x + 2, y + 2, 26, 20);
             g.setColor(mc);
             g.fillRect(x, y, 26, 20);
             g.setColor(new Color(100, 220, 120));
             g.fillRect(x + 4, y + 4, 14, 12);
-            g.setColor(ac);
-            g.fillRect(x + 26, y + 8, 8, 4);
-            g.setColor(new Color(200, 220, 200));
-            g.fillRect(x + 34, y + 9, 4, 2);
             g.setColor(new Color(60, 100, 80));
             g.fillRect(x - 4, y + 2, 4, 16);
             g.setColor(ac);
@@ -1277,7 +1619,7 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
             drawMedCross(g, x + 13, y - 6, 8, new Color(220, 50, 60));
         }
 
-        void drawTowerFire(Graphics2D g, int x, int y, Color mc, Color ac) {
+        void drawTowerBody_Fire(Graphics2D g, int x, int y, Color mc, Color ac) {
             g.setColor(new Color(40, 15, 10));
             g.fillRect(x + 2, y + 2, 26, 20);
             g.setColor(mc);
@@ -1286,16 +1628,12 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
             g.fillRect(x + 4, y + 4, 10, 12);
             g.setColor(new Color(255, 140, 80));
             g.fillRect(x + 6, y + 6, 6, 8);
-            g.setColor(new Color(80, 30, 20));
-            g.fillRect(x + 26, y + 6, 10, 8);
-            g.setColor(ac);
-            g.fillRect(x + 28, y + 8, 8, 4);
             g.setColor(ac);
             g.setFont(new Font("Monospaced", Font.BOLD, 8));
             g.drawString("UV", x + 18, y + 14);
         }
 
-        void drawTowerIce(Graphics2D g, int x, int y, Color mc, Color ac) {
+        void drawTowerBody_Ice(Graphics2D g, int x, int y, Color mc, Color ac) {
             g.setColor(new Color(10, 40, 60));
             g.fillRect(x + 2, y + 2, 20, 22);
             g.setColor(mc);
@@ -1303,17 +1641,13 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
             g.setColor(ac);
             g.fillRect(x + 2, y + 6, 16, 4);
             g.fillRect(x + 2, y + 14, 16, 4);
-            g.setColor(new Color(20, 80, 120));
-            g.fillRect(x + 20, y + 4, 12, 14);
-            g.setColor(ac);
-            g.fillRect(x + 22, y + 6, 8, 10);
             g.setColor(new Color(180, 230, 255));
             g.fillRect(x + 8, y - 8, PX, PX * 3);
             g.fillRect(x + 4, y - 4, PX * 3, PX);
             g.fillRect(x + 12, y - 4, PX * 3, PX);
         }
 
-        void drawTowerElec(Graphics2D g, int x, int y, Color mc, Color ac) {
+        void drawTowerBody_Elec(Graphics2D g, int x, int y, Color mc, Color ac) {
             g.setColor(new Color(40, 35, 5));
             g.fillRect(x + 2, y + 2, 22, 20);
             g.setColor(mc);
@@ -1349,18 +1683,5 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
             g.setColor(ac);
             g.fillRect(x2 - PX, y2 - PX, PX * 3, PX * 3);
         }
-    }
-
-    // MouseListener stubs
-    public void mousePressed(MouseEvent e) {
-    }
-
-    public void mouseReleased(MouseEvent e) {
-    }
-
-    public void mouseEntered(MouseEvent e) {
-    }
-
-    public void mouseExited(MouseEvent e) {
     }
 }
