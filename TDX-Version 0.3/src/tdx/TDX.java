@@ -12,7 +12,7 @@ import java.util.List;
 public class TDX extends JPanel implements ActionListener, MouseListener {
 
     // =====================================================================
-    // SCREEN / SCALE
+    // Escala de la pantalla
     // =====================================================================
     static int SW = 1280;
     static int SH = 720;
@@ -34,7 +34,7 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
     }
 
     // =====================================================================
-    // GAME STATE
+    // Estado Del Juego
     // =====================================================================
     enum GameState {
         MENU, SETTINGS, PLAYING, SCORE_ENTRY, SCOREBOARD, MAP_SELECT
@@ -78,7 +78,7 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
     long nameCursorBlink = 0;
 
     // =====================================================================
-    // MAP WAYPOINTS
+    // Mapa de Puntos
     // =====================================================================
     int[][] mapWaypoints; // {x, y} pairs for enemy path
 
@@ -310,7 +310,7 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
     }
 
     // =====================================================================
-    // COLORS
+    // COLORES
     // =====================================================================
     static final Color COL_BG = new Color(8, 14, 20);
     static final Color COL_PATH = new Color(18, 36, 30);
@@ -344,7 +344,7 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
     }
 
     // =====================================================================
-    // DIFFICULTY MULTIPLIERS — 4 levels
+    // Dificultades Multiplicadores — 4 Niveles
     // =====================================================================
     double enemyHealthMult() {
         switch (difficulty) {
@@ -412,7 +412,7 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
     }
 
     // =====================================================================
-    // GAME LOGIC
+    // Logica del Juego
     // =====================================================================
     void startGame() {
         recalcLayout();
@@ -471,7 +471,7 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
             }
             enemies.add(e);
         }
-        // Boss waves
+        // Rondas del Jefe
         if (wave % 5 == 0) {
             Enemy boss;
             if (wave == 25) {
@@ -496,7 +496,7 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
     }
 
     // =====================================================================
-    // TOWER PLACEMENT
+    // Espacio de la Torre
     // =====================================================================
     boolean isValidTowerPosition(int x, int y) {
         if (x < 10 || x > SW - 30 || y < UI_TOP_H + 4 || y > UI_BOT_Y - 10) {
@@ -549,7 +549,7 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
     }
 
     // =====================================================================
-    // SCORE SYSTEM
+    // Sistema de Puntaje
     // =====================================================================
     void addScore(String name, int value, int diff) {
         if (scoreCount < MAX_SCORES) {
@@ -661,7 +661,7 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
     }
 
     // =====================================================================
-    // PAINT
+    // Diseño o Pintado
     // =====================================================================
     @Override
     protected void paintComponent(Graphics g) {
@@ -821,7 +821,7 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
     }
 
     // =====================================================================
-    // MAP SELECT
+    // Seleccion de Mapa
     // =====================================================================
     void drawMapSelect(Graphics2D g2) {
         g2.setColor(COL_BG);
@@ -941,7 +941,7 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
     }
 
     // =====================================================================
-    // SETTINGS
+    // Ajustes
     // =====================================================================
     void drawSettings(Graphics2D g2) {
         g2.setColor(COL_BG);
@@ -1082,7 +1082,7 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
     }
 
     // =====================================================================
-    // SCORE ENTRY SCREEN
+    // Entrada del Puntaje
     // =====================================================================
     void drawScoreEntry(Graphics2D g2) {
         g2.setColor(COL_BG);
@@ -1170,7 +1170,7 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
     }
 
     // =====================================================================
-    // SCOREBOARD
+    // Puntaje de la Barra
     // =====================================================================
     void drawScoreboard(Graphics2D g2) {
         g2.setColor(COL_BG);
@@ -1247,7 +1247,7 @@ public class TDX extends JPanel implements ActionListener, MouseListener {
     }
 
     // =====================================================================
-    // GAME SCREEN
+    // Pantalla del Juego
     // =====================================================================
     void drawGame(Graphics2D g2) {
         g2.setColor(COL_BG);
