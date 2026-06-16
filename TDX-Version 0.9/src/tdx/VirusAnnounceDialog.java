@@ -949,81 +949,160 @@ public class VirusAnnounceDialog extends JDialog {
             return new Color(40, 200, 120);
         }
     }
-
+// AQUI VAN LOS DATOS DE LOS VIRUS; SI SE AGREGAN SOLO ES DE COIAR Y PEGAR; SE SOBRESCRIBE LOS DATOS Y SE ESCOJE EL TIPO DE VIRUS
+// EN EL APARTADO DE VIRUSSHAPE; TAMBIEN EL COLOR SE CAMBIA EN COLOR XD
+/*
+    switch (v.shape) {
+                case SPHERE:
+                    drawSphereVirus(g2, cx, cy, pulse);
+                    break;
+                case ICOSAHEDRON:
+                    drawIcosaVirus(g2, cx, cy, pulse);
+                    break;
+                case ELONGATED:
+                    drawElongatedVirus(g2, cx, cy, pulse);
+                    break;
+                case BACTERIUM:
+                    drawBacteriumVirus(g2, cx, cy, pulse);
+                    break;
+                case CORONA:
+                    drawCoronaVirus(g2, cx, cy, pulse);
+                    break;
+            }
+    */
     private static List<VirusData> buildVirusList() {
         List<VirusData> list = new ArrayList<>();
-
+        // 1. COVID-19
         list.add(new VirusData(
-                "Influenza-X",
-                "Orthomyxovirus influenzae X",
+                "COVID-19",
+                "SARS-CoV-2", 
+                "ARN",
+                VirusShape.SPHERE,
+                new Color(120, 220, 155),
+                3,
+                "Sistema respiratorio",
+                new String[]{"Estornudos, secreción nasal, tos, fiebre malestar general, diarrea y dolor de cabeza."},
+                "Guardar reposo, alimentación ligera y de fácil digestión, y abundante líquido. En casos graves, oxigenoterapia y medicamentos específicos." 
+        ));
+
+// 2. Gripe
+        list.add(new VirusData(
+                "Gripe", 
+                "Virus de la influenza", 
+                "ARN",
+                VirusShape.ICOSAHEDRON,
+                new Color(250, 250, 250),
+                3,
+                "Sistema respiratorio",
+                new String[]{"Fiebre, escalofríos, secreción nasal, estornudos, dolor de garganta, dolor muscular, cansancio excesivo y pérdida de apetito."}, 
+                "Permanecer en reposo, beber mucha agua y tener una alimentación ligera, aparte de medicamentos antiinflamatorios o analgésicos." 
+        ));
+
+// 3. Resfriado
+        list.add(new VirusData(
+                "Resfriado", 
+                "Rinovirus", 
+                "ARN",
+                VirusShape.ELONGATED,
+                new Color(80, 80, 80),
+                3,
+                "Sistema respiratorio",
+                new String[]{"Secreción nasal, estornudos frecuentes, congestión nasal, dolor y picazón en la garganta, tos y náuseas."},
+                "Descansar, beber muchos líquidos, una dieta ligera y uso de medicamentos antiinflamatorios y analgésicos."
+        ));
+
+// 4. Sarampión
+        list.add(new VirusData(
+                "Sarampión",
+                "Familia Paramyxoviridae",
+                "ARN",
+                VirusShape.BACTERIUM,
+                new Color(80, 160, 255),
+                3,
+                "Sistema respiratorio",
+                new String[]{"Manchas rojas en la piel, fiebre alta, tos con flemas, aumento de la sensibilidad a la luz, secreción nasal, pérdida de apetito y mancha blanca en el interior de la mejilla."}, 
+                "Reposo, la hidratación y el uso de analgésicos. Además, en algunos casos, se puede recomendar el uso de suplementos de vitamina A."
+        ));
+
+// 5. Poliomielitis
+        list.add(new VirusData(
+                "Poliomielitis", 
+                "Poliovirus", 
+                "ARN",
+                VirusShape.CORONA,
+                new Color(80, 160, 255),
+                3,
+                "Sistema respiratorio",
+                new String[]{"Dolor de cabeza, fiebre y cansancio excesivo. En algunos casos, parálisis de una o ambas piernas, atrofia muscular, dificultad para hablar y/o tragar y espasmos musculares."}, 
+                "No existe tratamiento específico; no obstante, la fisioterapia está indicada para estimular y favorecer el desarrollo de los músculos atrofiados y mejorar la postura." 
+        ));
+
+// 6. Hepatitis
+        list.add(new VirusData(
+                "Hepatitis", 
+                "Virus de la hepatitis", 
+                "ARN",
+                VirusShape.CORONA,
+                new Color(80, 160, 255),
+                3,
+                "Sistema respiratorio",
+                new String[]{"Dolor de cabeza, sensación de malestar general, hinchazón abdominal, náuseas, vómitos, piel y ojos amarillentos, heces claras y orina oscura."}, 
+                "Reposo, alimentación ligera y se puede recomendar el uso de medicamentos como interferón, lamivudina y adefovir." 
+        ));
+
+// 7. Fiebre amarilla
+        list.add(new VirusData(
+                "Fiebre amarilla",
+                "Género Flavivirus",
                 "ARN",
                 VirusShape.SPHERE,
                 new Color(80, 160, 255),
                 3,
                 "Sistema respiratorio",
-                new String[]{"Fiebre alta (>39°C)", "Mialgias intensas", "Tos seca"},
-                "Antivirales (oseltamivir), reposo, hidratación. Vacunación profiláctica anual."
+                new String[]{"Fuerte dolor de cabeza, fiebre, escalofríos, mayor sensibilidad a la luz, dolor muscular y aumento de los latidos cardíacos. Puede haber color amarillento de piel/ojos, vómitos con sangre y dolor abdominal."}, // [cite: 50, 51]
+                "Reposo, ingesta de abundante líquido durante el día, alimentación ligera y medicamentos que ayuden a aliviar los síntomas." 
         ));
 
+// 8. Varicela
         list.add(new VirusData(
-                "HexoPox",
-                "Icosahexavirus dermis",
-                "ADN",
-                VirusShape.ICOSAHEDRON,
-                new Color(180, 80, 255),
-                4,
-                "Piel y mucosas",
-                new String[]{"Erupciones pustulosas", "Fiebre moderada", "Linfadenopatía"},
-                "Cidofovir IV en casos graves, tecovirimat oral. Aislamiento de contacto estricto."
-        ));
-
-        list.add(new VirusData(
-                "NeuroWorm",
-                "Filovirus neurotropicus",
+                "Varicela",
+                "Virus de la varicela-zóster", 
                 "ARN",
-                VirusShape.ELONGATED,
-                new Color(255, 80, 80),
-                5,
-                "Sistema nervioso central",
-                new String[]{"Cefalea severa", "Convulsiones", "Alteración de conciencia"},
-                "Soporte UCI, ribavirina experimental. No hay antiviral específico aprobado. Notificación obligatoria."
-        ));
-
-        list.add(new VirusData(
-                "CytoBact",
-                "Mycobacterium cytolytica",
-                "Bacteria",
-                VirusShape.BACTERIUM,
-                new Color(80, 220, 120),
+                VirusShape.ICOSAHEDRON,
+                new Color(80, 160, 255),
                 3,
-                "Macrófagos / pulmón",
-                new String[]{"Tos productiva", "Sudoración nocturna", "Pérdida de peso"},
-                "Antibióticos de amplio espectro (rifampicina + isoniazida). Tratamiento mínimo 6 meses."
+                "Sistema respiratorio",
+                new String[]{"Aparición de ampollas rojas por todo el cuerpo que contienen líquido y causan mucha comezón, fiebre, cansancio, malestar general y falta de apetito."},
+                "Uso de medicamentos antialérgicos para aliviar la comezón y se recomienda evitar el contacto con otras personas." 
         ));
 
+// 9. Viruela del mono
         list.add(new VirusData(
-                "CoroNova",
-                "Betacoronavirus novus",
-                "ARN+",
-                VirusShape.CORONA,
-                new Color(255, 160, 40),
-                4,
-                "Pulmón, corazón, riñón",
-                new String[]{"Disnea progresiva", "Pérdida de olfato/gusto", "Hipoxemia silente"},
-                "Antiinflamatorios (dexametasona), anticoagulantes profilácticos, oxígeno suplementario. Seguimiento post-COVID."
+                "Viruela del mono", 
+                "Género Orthopoxvirus", 
+                "ARN",
+                VirusShape.SPHERE,
+                new Color(80, 160, 255),
+                3,
+                "Sistema respiratorio",
+                new String[]{"Surgimiento de ampollas y heridas en la piel, escalofríos, dolor muscular, dolor de cabeza y fiebre."}, 
+                "Suelen desaparecer en un máximo de 21 días, pero se puede recomendar el uso de medicamentos sintomáticos o el antiviral tecovirimat." 
         ));
+
+// 10. Fiebre oropouche
         list.add(new VirusData(
-                "Coronabirus",
-                "Betacoronavirus novus",
-                "ARN+",
-                VirusShape.BACTERIUM,
-                new Color(255, 160, 40),
-                4,
-                "Pulmón, corazón, riñón",
-                new String[]{"Disnea progresiva", "Pérdida de olfato/gusto", "Hipoxemia silente"},
-                "Antiinflamatorios (dexametasona), anticoagulantes profilácticos, oxígeno suplementario. Seguimiento post-COVID."
+                "Fiebre oropouche", 
+                "Virus Orthobunyavirus", 
+                "ARN",
+                VirusShape.ICOSAHEDRON,
+                new Color(80, 160, 255),
+                3,
+                "Sistema respiratorio",
+                new String[]{"Fiebre repentina alta, escalofríos, dolor de cabeza intenso, dolor muscular y en las articulaciones, náuseas, diarrea, dolor abdominal o sangrados."},
+                "Reposo, aumentar la ingesta de líquidos y el uso de analgésicos y antipiréticos, como paracetamol o dipirona." 
         ));
         return list;
+
     }
 
     // ── Helpers globales ──────────────────────────────────────────────────
